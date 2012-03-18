@@ -1,0 +1,1827 @@
+import sys
+sys.path[:0] = ['../../..']
+import Pmw
+import math
+import random
+from Tkinter import *
+
+class MultipleBulletShot(object):
+    def __init__(self, shotTag):
+        self.calculatePoints = True
+        self.shotOffset = 0
+        self.drawBullet = True
+        self.shotLeft = 0
+        self.shotTop = 0
+        self.tag = shotTag
+        
+    #handles drawing the bullet moving and its explosion
+    def drawShot(self,velocity, angle, t, tankLeftPlayer1, tankTopPlayer1,
+                 tankLeftPlayer2, tankTopPlayer2, radius, points):
+        #shot is added to the set if it has already exploded so that it doesnt
+        #shoot twice
+        if(self.tag in canvas.data.shotSet): return 0
+        explosionRadius = radius
+        t -= self.shotOffset
+        shotSize = 3
+        if(self.drawBullet == True):
+            if(canvas.data.isPlayer1Turn == True):
+                return self.drawPlayer1Shot(velocity, angle, t, tankLeftPlayer1,
+                tankTopPlayer1, tankLeftPlayer2, tankTopPlayer2, radius, points)
+                
+            else:
+                return self.drawPlayer2Shot(velocity, angle, t, tankLeftPlayer1,
+                tankTopPlayer1, tankLeftPlayer2, tankTopPlayer2, radius, points)
+                
+        else:
+            return self.doExplosion(velocity, angle, t, tankLeftPlayer1,
+                tankTopPlayer1, tankLeftPlayer2, tankTopPlayer2, radius, points)
+            
+    #handles drawing player1's bullets
+    def drawPlayer1Shot(self,velocity, angle, t, tankLeftPlayer1,
+                tankTopPlayer1, tankLeftPlayer2,tankTopPlayer2, radius, points):
+        #changes position of the bullet as it travels
+        shotSize = 3
+        shotLeft = (tankLeftPlayer1+20+ xCoordinate(velocity, angle, t))
+        shotTop = (tankTopPlayer1-15 - yCoordinate(velocity,angle,t))
+        #if the bulllet is within bounds, then draw it
+        if((shotTop +3 < canvas.data.canvasHeight) and
+            (shotLeft < canvas.data.canvasWidth - 3) and(shotLeft > 0)):
+            canvas.create_oval(shotLeft,shotTop,shotLeft+shotSize,
+                               shotTop+shotSize,fill="blue",tag=self.tag)
+            
+            if(isCollision(self.tag) == False or shotTop <5): return 1
+            else:
+                collisionWithTank, tankHit=isCollisionWithTank(self.tag)
+                #if there is a colission with a tank, add the points to
+                #the right tank depending on which was hit
+                if (collisionWithTank):
+                    #turns this off, so the explosion doesnt give even
+                    #more points
+                    self.calculatePoints = False
+                    tankHit = canvas.gettags(tankHit)[0]
+                    if tankHit != "tank1Top" and tankHit!="tank1Bottom":
+                        canvas.data.player1Score += points
+                    else:
+                        #if the tank hit was the same tank that fired it
+                        #add the points to the other player
+                        canvas.data.player2Score += points
+                self.shotOffset = t
+                self.drawBullet = False
+                self.shotLeft = shotLeft + 2
+                self.shotTop = shotTop + 2
+                return 1
+        else: return 0
+        
+    
+    #handles drawing player 2's bullets
+    def drawPlayer2Shot(self,velocity, angle, t, tankLeftPlayer1,tankTopPlayer1,
+                        tankLeftPlayer2, tankTopPlayer2, radius, points):
+        shotSize = 3
+        shotLeft = (tankLeftPlayer2+20+ xCoordinate(velocity, angle, t))
+        shotTop = (tankTopPlayer2-15 - yCoordinate(velocity,angle,t))
+        if((shotTop +3 < canvas.data.canvasHeight) and
+            (shotLeft < canvas.data.canvasWidth - 3) and(shotLeft > 0)):
+            canvas.create_oval(shotLeft,shotTop,shotLeft+shotSize,
+                            shotTop+shotSize,fill = "blue",tag=self.tag)
+            
+            if(isCollision(self.tag) == False or shotTop<5): return 1
+            else:
+                collisionWithTank, tankHit=isCollisionWithTank(self.tag)
+                if (collisionWithTank):
+                    self.calculatePoints = False
+                    tankHit = canvas.gettags(tankHit)[0]
+                    if tankHit != "tank2Top" and tankHit!="tank2Bottom":
+                        canvas.data.player2Score += points
+                    else:
+                        canvas.data.player1Score += points
+                self.shotOffset = t
+                self.drawBullet = False
+                self.shotLeft = shotLeft + 2
+                self.shotTop = shotTop + 2
+                return 1
+        else: return 0
+    
+    #creates the explosion from the bullets
+    def doExplosion(self,velocity, angle, t, tankLeftPlayer1,
+                tankTopPlayer1, tankLeftPlayer2,tankTopPlayer2, radius, points):
+        shotLeft = self.shotLeft
+        shotTop = self.shotTop
+        explosionRadius = radius
+        #radius should get bigger with time
+        r = t*10
+        #each bullet has its own tag and own explosion tag
+        explosionCover = self.tag.join(["","ExplosionCover"])
+        explosionCoverRed = self.tag.join(["","ExplosionCoverRed"])
+        canvas.delete(explosionCover, explosionCoverRed)
+        if r<= explosionRadius:
+            if(r+10 >= radius):
+                #draws outline of the explosion, but doesnt let it get bigger
+                #than the maximum radius
+                canvas.create_oval(shotLeft-radius+1,shotTop-radius+1,
+                shotLeft+radius-1,shotTop+radius-1,fill = "red", width = 0,
+                tag = explosionCoverRed)
+            else:
+                #draws outline of the explosin
+                canvas.create_oval(shotLeft-r-7,shotTop-r-7,shotLeft+r+7,
+                shotTop+r+7,fill ="red",width = 0, tag = explosionCoverRed)
+            #draws explosion same color as background so it looks like terrain
+            #is changing
+            canvas.create_oval(shotLeft-r, shotTop-r,shotLeft +r,shotTop +r,
+            fill=canvas.data.color,tag =explosionCover,width = 0)
+            #if there is collision with a tank, it calculates the amount of
+            #points to be given and turns of the explosion kick
+            if(isCollisionWithTank(explosionCover)[0] == True and
+               self.calculatePoints == True):
+                self.calculatePoints = False
+                setExplosionKickAngle(shotLeft,shotTop)
+                canvas.data.explosionKick = True
+                calculatePoints(shotLeft,shotTop,explosionRadius,
+                            isCollisionWithTank(explosionCover)[1], points)
+            return 1
+        else:
+            #once explosion has hit the max radius, then the terrain image is
+            #actually altered
+            removeTerrain(self.shotLeft, self.shotTop, explosionRadius)
+            canvas.delete(explosionCover, explosionCoverRed)
+            canvas.data.shotSet.add(self.tag)
+            canvas.data.animateGravity1 = True
+            canvas.data.animateGravity2 = True
+            return 0
+    #resets attributes of the bullet so it can be used again
+    def reset(self):
+        self.calculatePoints = True
+        self.shotOffset = 0
+        self.drawBullet = True
+        self.shotLeft = 0
+        self.shotTop = 0
+#creates GUI for the angle and power counter       
+class Counter:
+    def __init__(self, parent):
+        #angle, goes from 0 to 180
+        self._int1 = Pmw.Counter(parent,
+                labelpos = 'w',
+                label_text = 'Angle:',
+                orient = 'horizontal',
+                entry_width = 2,
+                entryfield_value = 50,
+                entryfield_validate = {'validator' : 'integer',
+                        'min' : 0, 'max' : 180})
+        #power, goes from 0 to 100
+        self._int = Pmw.Counter(parent,
+                labelpos = 'w',
+                label_text = 'Power',
+                orient = 'horizontal',
+                entry_width = 2,
+                entryfield_value = 50,
+                entryfield_validate = {'validator' : 'integer',
+                        'min' : 0, 'max' : 100})
+        
+        
+
+        counters = (self._int1, self._int)
+        Pmw.alignlabels(counters)
+        
+        # Pack them all so they can be displayed
+        for counter in counters:
+            counter.pack(fill = "both", padx=500, pady=5,)
+        self._int.pack(fill = "both", padx=500, pady=5)
+        
+#creates the option menu where you can choose which weapon to fire
+class WeaponSelect:
+    def __init__(self, parent):
+        self.var = StringVar()
+        self.var.set('Single Shot')
+        self.method_menu = Pmw.OptionMenu(parent,
+                labelpos = 'w',
+                label_text = 'Choose Weapon:',
+                menubutton_textvariable = self.var,
+                items = ['Single Shot', 'Three Shot','Bounce Shot','Jackhammer',
+                         'BigShot', 'Machine Gun', 'Lightning'],
+                menubutton_width = 15,)
+        self.method_menu.pack(anchor = 'w', padx = 500, pady = 5)
+        
+
+#gives you change in x coordinate of moving object based on velocity, angle,
+#and time
+def xCoordinate(velocity,angle,t):
+    return int(round(velocity*math.cos(angle)*t))
+
+#gives you change in y coordinate of moving object based on velocity, angle,
+#and time
+def yCoordinate(velocity,angle,t):
+    gravity = canvas.data.gravity
+    return int(round(((velocity*math.sin(angle)*t) - (.5*gravity*(t**2)))))
+    
+#checks if the coordinates are legal in the terrain image
+def inImage(x, y):
+    return ((x >= 0) and (x < 1250) and (y >= 0) and (y < 800))
+
+#removes terrain by changing the color to te background color, starting with
+#the point given and removing all terrain within given radius
+def removeTerrain(x, y, r):
+    y-=canvas.data.pixelOffset
+    color = canvas.data.color
+    for dx in xrange(-r,r):
+        for dy in xrange(-r,r):
+            #after going through all points in radius around it, checks if those
+            #points would be in the encompassing circle.
+            if ((dx**2 + dy**2 <= r**2) and inImage(x+dx,y+dy)):
+                try:
+                    #removes terrain
+                    canvas.data.terrain.put(color, to=(x+dx,y+dy))
+                except Exception as error:
+                    print "Caught exception:", error
+    canvas.delete("explosionCover")
+       
+#returns string of the RGB value of a point on the image
+def getColor(img, x, y):
+    try:
+        y-=canvas.data.pixelOffset
+        hexColor = "#%02x%02x%02x" % getRGB(img, x, y)
+        return hexColor
+    except:
+        return canvas.data.color
+
+def getRGB(img, x, y):
+    value = img.get(x, y)
+    return tuple(map(int, value.split(" ")))
+
+#starts the actual game
+def button1Pressed():
+    #deletes menu items
+    canvas.delete("menu", "selectionRing")    #deletes menu items
+               #set background color
+    canvas.create_image(0, canvas.data.pixelOffset,
+                        image=canvas.data.terrain, anchor=NW, tag = "terrain")
+    canvas.data.tank1Gravity = True
+    canvas.data.tank2Gravity = True
+    #turns menuOn to False so that tanks can now move
+    canvas.data.menuOn = False
+    canvas.data.turnCount = 20
+    canvas.data.player1Score = 0
+    canvas.data.player2Score = 0
+    canvas.data.fire.config(state = NORMAL)
+    redrawAll()
+
+#if Mt Rushmore terrain is selected, it sets that as terrain and initializes
+#tank placement to be consistent with the terrain
+def mtRushmoreSelected():
+    canvas.data.terrain = PhotoImage(file = "MtRushmore.gif")
+    canvas.data.pixelOffset = 244
+    canvas.data.tankTopPlayer1 = 292
+    canvas.data.tankLeftPlayer1= 200
+    canvas.data.originalTankLeftPlayer1 = 200
+    canvas.data.originalTankTopPlayer1 = 292
+    canvas.data.tankLeftPlayer2 = 840
+    canvas.data.tankTopPlayer2 = 394
+    canvas.data.originalTankLeftPlayer2 = 840
+    canvas.data.originalTankTopPlayer2 = 394
+    canvas.data.originalPosition = canvas.data.tankLeftPlayer1
+    canvas.data.originalShotLeftPosition = canvas.data.tankLeftPlayer1
+    canvas.data.originalShotTopPosition = canvas.data.tankTopPlayer1
+    canvas.delete("selectionRing")
+    canvas.create_rectangle(90,377,310,523, outline = "yellow",
+                            width = 2, tag = "selectionRing")
+
+#if Hill terrain is selected, it sets that as terrain and initializes
+#tank placement to be consistent with the terrain 
+def smallHillSelected():
+    canvas.data.terrain = PhotoImage(file = "terrain3.gif")
+    canvas.data.pixelOffset = 176
+    canvas.data.tankTopPlayer1 = 176
+    canvas.data.tankLeftPlayer1= 200
+    canvas.data.originalTankLeftPlayer1 = 200
+    canvas.data.originalTankTopPlayer1 = 176
+    canvas.data.tankLeftPlayer2 = 855
+    canvas.data.tankTopPlayer2 = 479
+    canvas.data.originalTankLeftPlayer2 = 855
+    canvas.data.originalTankTopPlayer2 = 479
+    canvas.data.originalPosition = canvas.data.tankLeftPlayer1
+    canvas.data.originalShotLeftPosition = canvas.data.tankLeftPlayer1
+    canvas.data.originalShotTopPosition = canvas.data.tankTopPlayer1
+    canvas.delete("selectionRing")
+    canvas.create_rectangle(390,377,610,523, outline = "yellow",
+                            width = 2, tag = "selectionRing")
+    
+#if flat terrain is selected, it sets that as terrain and initializes
+#tank placement to be consistent with the terrain   
+def smallFlatsSelected():
+    canvas.data.terrain = PhotoImage(file = "terrain.gif")
+    canvas.data.pixelOffset = 526
+    canvas.data.tankTopPlayer1 = 520
+    canvas.data.tankLeftPlayer1 = 200
+    canvas.data.originalTankLeftPlayer1 = 200
+    canvas.data.originalTankTopPlayer1 = 520
+    canvas.data.tankLeftPlayer2 = 840
+    canvas.data.tankTopPlayer2 = 520
+    canvas.data.originalTankLeftPlayer2 = 840
+    canvas.data.originalTankTopPlayer2 = 520
+    canvas.data.originalPosition = canvas.data.tankLeftPlayer1
+    canvas.data.originalShotLeftPosition = canvas.data.tankLeftPlayer1
+    canvas.data.originalShotTopPosition = canvas.data.tankTopPlayer1
+    canvas.delete("selectionRing")
+    canvas.create_rectangle(690,377,910,523, outline = "yellow",
+                            width = 2, tag = "selectionRing")
+    
+#if Mountain terrain is selected, it sets that as terrain and initializes
+#tank placement to be consistent with the terrain   
+def smallMountainSelected():
+    canvas.data.terrain = PhotoImage(file = "mountain.gif")
+    canvas.data.pixelOffset = 0
+    canvas.data.tankTopPlayer1 = 404
+    canvas.data.tankLeftPlayer1 = 250
+    canvas.data.originalTankLeftPlayer1 = 200
+    canvas.data.originalTankTopPlayer1 = 404
+    canvas.data.tankLeftPlayer2 = 872
+    canvas.data.tankTopPlayer2 = 378
+    canvas.data.originalTankLeftPlayer2 = 872
+    canvas.data.originalTankTopPlayer2 = 378
+    canvas.data.originalPosition = canvas.data.tankLeftPlayer1
+    canvas.data.originalShotLeftPosition = canvas.data.tankLeftPlayer1
+    canvas.data.originalShotTopPosition = canvas.data.tankTopPlayer1
+    canvas.delete("selectionRing")
+    canvas.create_rectangle(990,377,1210,523, outline = "yellow",
+                            width = 2, tag = "selectionRing")
+    
+#leaves menu and loads instructions    
+def instructionButtonPressed():
+    canvas.delete("menu","tank1Turret","tank1Bottom","tank1Top", "tank2Turret",
+                  "tank2Bottom","tank2Top", "bullet", "score")
+    canvas.create_rectangle(0,0,canvas.data.canvasWidth,canvas.data.canvasHeight,
+                            fill = "black", tag = "menu")
+    canvas.create_text(50,50,
+    text="Select a weapon to fire at your opponent and select a power and"+
+    " angle.  Different weapons have different effects and point values",
+    fill = "red", font = "Helvetica 20", anchor = NW, tag = "instructions")
+    canvas.create_text(475,70,text = "Arrow keys move the tanks", fill = "red",
+                       font = "Helvetica 20", anchor = NW, tag = "instructions")
+    canvas.create_text(3,200, text = "Single shot creates a medium size" +
+    " explosion \nBounce Shot bounces four times and then explodes" +
+    "\nJackhammer bounces in place 5 times \nMachine Gun fires 15 bullets at a time"+
+    "\nThree Shot fires three bullets at the same time"+
+    "\nLightning shot fires a bullet which if close enough to the other tank,"+
+    "creates a lightning bolt to the tank" + "\nBig Shot fires a larger version" +
+    "of the single shot", fill = "red",
+    font = "Helvetica 20", anchor = NW, tag = "instructions")
+    canvas.data.gameCount = 1
+    backButton = Button(canvas, command = backButtonPressed, borderwidth = 0, text = "Back")
+    canvas.create_window(600,500, window = backButton, tag = "instructions")
+
+#goes back to menu after loading instructions    
+def backButtonPressed():
+    canvas.delete("instructions")
+    init()
+
+#converts degrees to radians
+def radians(x):
+    return (2*math.pi*x/360)
+
+#implements the Fire button
+def fireButton():
+    print canvas.find_all()
+    #sets angle and and saves old angle and power so player's last used angle and
+    #power will be loaded again
+    try:canvas.data.angle = radians(float(canvas.data.widget._int1.get()))
+    except Exception as error: print error
+    if canvas.data.isPlayer1Turn == True:
+        canvas.data.player1Velocity = canvas.data.widget._int.get()
+    else:
+        canvas.data.player2Velocity = canvas.data.widget._int.get()
+    canvas.data.velocity = float(canvas.data.widget._int.get())
+    #sets which weapon to fire
+    weapon = canvas.data.weaponSelect.method_menu.getcurselection()
+    #fires weapon and initializes weapon specific things
+    if(canvas.data.shotFired == False):
+        if(weapon =="Single Shot"):
+            canvas.data.shotFired = True
+            canvas.data.regularShotFired = True
+        elif(weapon =="Bounce Shot"):
+            canvas.data.shotFired = True
+            canvas.data.bounceShotFired = True
+            canvas.data.bounceShotVelocity = canvas.data.velocity
+            if(canvas.data.isPlayer1Turn == True):
+                canvas.data.originalShotLeftPosition=canvas.data.tankLeftPlayer1+20
+                canvas.data.originalShotTopPosition = canvas.data.tankTopPlayer1 - 10
+            else:
+                canvas.data.originalShotLeftPosition=canvas.data.tankLeftPlayer2+20
+                canvas.data.originalShotTopPosition = canvas.data.tankTopPlayer2 - 10
+        elif(weapon == "Machine Gun"):
+            canvas.data.shotFired = True
+            canvas.data.machineGunFired = True
+        elif(weapon == "Jackhammer"):
+            canvas.data.shotFired = True
+            canvas.data.jackhammerFired = True
+            canvas.data.bounceShotVelocity = canvas.data.velocity
+            if(canvas.data.isPlayer1Turn == True):
+                canvas.data.originalShotLeftPosition=canvas.data.tankLeftPlayer1+20
+                canvas.data.originalShotTopPosition = canvas.data.tankTopPlayer1 - 10
+                canvas.data.jackhammerLeftPosition = canvas.data.tankLeftPlayer1+20
+                canvas.data.jackhammerTopPosition = canvas.data.tankTopPlayer1 - 10
+            else:
+                canvas.data.originalShotLeftPosition=canvas.data.tankLeftPlayer2+20
+                canvas.data.originalShotTopPosition = canvas.data.tankTopPlayer2 - 10
+                canvas.data.jackhammerLeftPosition = canvas.data.tankLeftPlayer2+20
+                canvas.data.jackhammerTopPosition = canvas.data.tankTopPlayer2 - 10
+        elif(weapon == "BigShot"):
+            canvas.data.shotFired = True
+            canvas.data.bigShotFired = True
+        elif(weapon == "Lightning"):
+            canvas.data.shotFired = True
+            canvas.data.lightningFired = True
+        elif(weapon == "Three Shot"):
+            canvas.data.shotFired = True
+            canvas.data.threeShotFired = True
+            
+#handles key presses
+def keyPressed(event):
+    if(canvas.data.isMovingLeft == False and canvas.data.isMovingRight== False
+       and canvas.data.menuOn == False):
+        #only lets you move if a bullet has not been fired
+        if (event.keysym == "Left" and canvas.data.shotFired == False):
+            canvas.data.isMovingLeft = True
+            #sets original position based on the player
+            #used as reference for every move 
+            if(canvas.data.isPlayer1Turn == True):
+                canvas.data.originalPosition = canvas.data.tankLeftPlayer1
+            else:
+                canvas.data.originalPosition = canvas.data.tankLeftPlayer2
+        #only lets you move if a bullet has not been fired
+        if (event.keysym == "Right" and canvas.data.shotFired == False):
+            canvas.data.isMovingRight = True
+            #sets original position based on the player
+            #used as reference for every move 
+            if(canvas.data.isPlayer1Turn == True):
+                canvas.data.originalPosition = canvas.data.tankLeftPlayer1
+            else:
+                canvas.data.originalPosition = canvas.data.tankLeftPlayer2
+
+#checks if bullet hits tank
+def isCollisionWithTank(tag):
+    tank1Top = canvas.find_withtag("tank1Top")
+    tank1Bottom = canvas.find_withtag("tank1Bottom")
+    tank2Top = canvas.find_withtag("tank2Top")
+    tank2Bottom = canvas.find_withtag("tank2Bottom")
+    bullet = canvas.find_withtag(tag)
+    itemsHit = 0
+    try:
+        x1,y1,x2,y2 = canvas.bbox(bullet)
+    except Exception as error:
+        pass
+    try:
+        itemsHit = canvas.find_overlapping(x1,y1,x2,y2)
+    except Exception as error:
+        pass
+    try:
+        #checks if tanks are in the items hit, and sets tank hit variable to
+        #that tank
+        if((tank1Top[0] in itemsHit)):
+            canvas.data.tankHit = "tank1Top"
+            canvas.data.originalTankLeftPlayer1 = canvas.data.tankLeftPlayer1
+            canvas.data.originalTankTopPlayer1 = canvas.data.tankTopPlayer1
+            return (True, tank1Top)
+        elif(tank1Bottom[0] in itemsHit):
+            canvas.data.tankHit = "tank1Bottom"
+            canvas.data.originalTankLeftPlayer1 = canvas.data.tankLeftPlayer1
+            canvas.data.originalTankTopPlayer1 = canvas.data.tankTopPlayer1
+            return (True, tank1Bottom)
+        elif(tank2Top[0] in itemsHit):
+            canvas.data.tankHit = "tank2Top"
+            canvas.data.originalTankLeftPlayer2 = canvas.data.tankLeftPlayer2
+            canvas.data.originalTankTopPlayer2 = canvas.data.tankTopPlayer2
+            return (True, tank2Top)
+        elif(tank2Bottom[0] in itemsHit):
+            canvas.data.tankHit = "tank2Bottom"
+            canvas.data.originalTankLeftPlayer2 = canvas.data.tankLeftPlayer2
+            canvas.data.originalTankTopPlayer2= canvas.data.tankTopPlayer2
+            return (True, tank2Bottom)
+        else:
+            return (False, None)
+    except Exception as error:
+        #print "Caught exception 3:", error
+        return (False,None)
+
+#checks if any object collides with any other objects in the canvas
+def isCollision(tag):
+    tank1Top = canvas.find_withtag("tank1Top")
+    tank1Bottom = canvas.find_withtag("tank1Bottom")
+    tank2Top = canvas.find_withtag("tank2Top")
+    tank2Bottom = canvas.find_withtag("tank2Bottom")
+    terrain = canvas.find_withtag("terrain")
+    bullet = canvas.find_withtag(tag)
+    itemsHit = 0
+    try:
+        x1,y1,x2,y2 = canvas.bbox(bullet)
+        xAv = x1+1
+        yAv = y1+1
+    except: pass
+    try:
+        itemsHit = canvas.find_overlapping(x1,y1,x2,y2)
+        #print tag, itemsHit, "terrain:", terrain[0]
+    except: pass
+    try:
+        #checks if tanks have been hit, but if terrain has been hit it must not
+        #be the background color
+        if((tank1Top[0] in itemsHit)or(tank1Bottom[0] in itemsHit)or
+            (tank2Top[0] in itemsHit)
+            or (tank2Bottom[0] in itemsHit) or ((terrain[0] in itemsHit) and
+                (getColor(canvas.data.terrain,xAv,yAv) != canvas.data.color))):
+            return True
+        else:
+            return False
+    except Exception as error:
+        print error
+        return False
+    
+#checks if tank hits terrain
+def isCollisionWithTerrain(topTag, bottomTag):
+    terrain = canvas.find_withtag("terrain")
+    tankTop = canvas.find_withtag(topTag)
+    tankBottom = canvas.find_withtag(bottomTag)
+    itemsTopHits = 0
+    try:
+        #initializes coordinates of box around the top part of the tank
+        xt, yt, x1t,y1t = canvas.bbox(tankTop)
+        xtAv = ((xt+x1t)/2)
+        ytAv = ((yt+y1t)/2)
+        #initializes coordinates of box around bottom of tank
+        xb, yb, x1b, y1b = canvas.bbox(tankBottom)
+        xbAv = ((xb+x1b)/2)
+        ybAv = ((yb+y1b)/2)
+    except: pass
+    try:
+        #creates list of items that the tank has hit, if there are any
+        itemsTopHits = canvas.find_overlapping(xt, yt, x1t,y1t)
+        itemsBottomHits = canvas.find_overlapping(xb, yb, x1b, y1b)
+        
+    except: pass
+    try:
+        #checks if terrain is in the list of hit things and if the color is
+        #not the background
+        if (((terrain[0] in itemsTopHits) or (terrain[0] in itemsBottomHits))
+            and (getColor(canvas.data.terrain,xbAv,y1b) != canvas.data.color)):
+            return True
+        else: return False
+    except Exception as error:
+        print error
+        return False
+
+#draws explosion after bullet hits ground
+def createExplosion(r,radius,shotLeft,shotTop,points):
+    canvas.delete("explosionCover", "explosionCoverRed")
+    cx = shotLeft+2
+    cy = shotTop+2
+    #keeps creating explosion untill stopExplosion has been turned on
+    if canvas.data.stopExplosion == False:
+        #makes sure explosion outline doesnt get bigger than the max radius
+        if(r+10 >= radius):
+            canvas.create_oval(cx-radius+1,cy-radius+1,cx+radius-1,cy+radius-1,
+                            fill = "red", width = 0, tag = "explosionCoverRed")
+        else:
+            canvas.create_oval(cx-r-7,cy-r-7,cx+r+7,cy+r+7,fill = "red",
+                               width = 0, tag = "explosionCoverRed")
+        #creates explosion cover same color as background so it looks like terrain
+        #has been destroyed
+        canvas.create_oval(cx-r, cy-r, cx+r, cy+r, fill = canvas.data.color,
+                           width = 0, tag = "explosionCover")
+        r+=1
+        #if the explosion has hit a tank and hasnt already calculated points, then
+        #it calculates points and turns gravity off so explosion kick can work right
+        if(isCollisionWithTank("explosionCoverRed")[0] == True and
+           canvas.data.calculatePoints == True and setExplosionKickAngle(cx,cy) == None):
+            
+            canvas.data.explosionKick = True
+            canvas.data.tank2Gravity = False
+            canvas.data.tank1Gravity = False
+            canvas.data.animateGravity1 = False
+            canvas.data.animateGravity2 = False
+            calculatePoints(cx,cy,radius,
+                            isCollisionWithTank("explosionCoverRed")[1], points)
+        #if explosion has become bigger than actual radius then the explosion is over
+        if r > radius:
+            canvas.delete("explosionCover", "explosionCoverRed")
+            canvas.data.stopExplosion = True
+            removeTerrain(cx, cy,radius)
+            canvas.data.animateGravity1 = True
+            canvas.data.animateGravity2 = True
+        delay = 20
+        canvas.after(delay,createExplosion,r,radius,shotLeft,shotTop,points)
+        
+#calculates score based on distance fom explosion center
+def calculatePoints(cx,cy,radius,tankHit,points):
+    canvas.data.calculatePoints=False
+    tankTopPlayer1  = canvas.data.tankTopPlayer1
+    tankLeftPlayer1 = canvas.data.tankLeftPlayer1
+    tankLeftPlayer2 = canvas.data.tankLeftPlayer2
+    tankTopPlayer2 = canvas.data.tankTopPlayer2
+    tankHit = canvas.gettags(tankHit)[0]
+    #checks if it hits top of tank1
+    if tankHit == "tank1Top":
+        #checks which side of the tank it hits based on which side is closer
+        
+        #if hit from left
+        if (distanceBetweenPoints(cx,cy, tankLeftPlayer1+12, tankTopPlayer1-6)<
+            distanceBetweenPoints(cx,cy, tankLeftPlayer1+28, tankTopPlayer1-6)):
+            canvas.data.player2Score += abs(int((1-(distanceBetweenPoints(cx,cy,
+                    tankLeftPlayer1+12, tankTopPlayer1-6) / radius)) *points))
+        
+        #if hit from right
+        else:
+            canvas.data.player2Score += abs(int((1-(distanceBetweenPoints(cx,cy,
+                    tankLeftPlayer1+28, tankTopPlayer1-6) / radius)) *points))
+    
+    elif tankHit == "tank1Bottom":
+        #checks whether it hits from right or left or bottom
+        
+        #if hit from left
+        if(cx < tankLeftPlayer1+6):
+            if (distanceBetweenPoints(cx,cy, tankLeftPlayer1, tankTopPlayer1)<
+                distanceBetweenPoints(cx,cy, tankLeftPlayer1+6, tankTopPlayer1+6)):
+                canvas.data.player2Score += abs(int((1-(distanceBetweenPoints(cx
+                    ,cy, tankLeftPlayer1, tankTopPlayer1) / radius)) *points))
+            else:
+                canvas.data.player2Score += abs(int((1-(distanceBetweenPoints(cx,
+                cy, tankLeftPlayer1+6, tankTopPlayer1+6) / radius)) *points))
+        #if hit from right      
+        elif(cx > tankLeftPlayer1 + 34):
+            if (distanceBetweenPoints(cx,cy, tankLeftPlayer1+40, tankTopPlayer1)<
+                distanceBetweenPoints(cx,cy, tankLeftPlayer1+34, tankTopPlayer1+6)):
+                canvas.data.player2Score += abs(int((1-(distanceBetweenPoints(cx
+                ,cy, tankLeftPlayer1+40, tankTopPlayer1) / radius)) *points))
+            else:
+                canvas.data.player2Score += abs(int((1-(distanceBetweenPoints(cx
+                ,cy, tankLeftPlayer1+34, tankTopPlayer1+6) / radius)) *points))
+                
+        #if hit from bottom
+        else:
+            canvas.data.player2Score+=abs(int((1-((cy-tankTopPlayer1+6.0)/radius))*points))
+    #checks if it hit top of tank 2
+    elif tankHit == "tank2Top":
+        
+        #if hit from left:
+        if (distanceBetweenPoints(cx,cy, tankLeftPlayer2+12, tankTopPlayer2-6)<
+            distanceBetweenPoints(cx,cy, tankLeftPlayer2+28, tankTopPlayer2-6)):
+            canvas.data.player1Score += abs(int((1-(distanceBetweenPoints(cx,cy,
+                    tankLeftPlayer2+12, tankTopPlayer2-6) / radius)) *points))
+            
+        #if hit from right:
+        else:
+            canvas.data.player1Score += abs(int((1-(distanceBetweenPoints(cx,cy,
+                    tankLeftPlayer2+28, tankTopPlayer2-6) / radius)) *points))
+    #checks if bottom of tank2 is hit       
+    elif tankHit == "tank2Bottom":
+        #if hit from left:
+        if(cx < tankLeftPlayer2+6):
+            if (distanceBetweenPoints(cx,cy, tankLeftPlayer2, tankTopPlayer2)<
+                distanceBetweenPoints(cx,cy, tankLeftPlayer2+6, tankTopPlayer2+6)):
+                canvas.data.player1Score += abs(int((1-(distanceBetweenPoints(cx,
+                    cy, tankLeftPlayer2, tankTopPlayer2) / radius)) *points))
+            else:
+                canvas.data.player1Score += abs(int((1-(distanceBetweenPoints(cx,
+                cy, tankLeftPlayer2+6, tankTopPlayer2+6) / radius)) *points))
+        #if hit from right:        
+        elif(cx > tankLeftPlayer2 + 34):
+            if (distanceBetweenPoints(cx,cy,tankLeftPlayer2+40,tankTopPlayer2)<
+                distanceBetweenPoints(cx,cy,tankLeftPlayer2+34,tankTopPlayer2+6)):
+                canvas.data.player1Score += abs(int((1-(distanceBetweenPoints(cx
+                ,cy, tankLeftPlayer2+40, tankTopPlayer2) / radius)) *points))
+            else:
+                canvas.data.player1Score += abs(int((1-(distanceBetweenPoints(cx,
+                cy, tankLeftPlayer2+34, tankTopPlayer2+6) / radius)) *points))
+        #if hit from bottom
+        else:
+            canvas.data.player1Score+=abs(int((1-((cy-tankTopPlayer2+6.0)/radius))*points))
+
+#calculates distance between two points
+def distanceBetweenPoints(x1,y1,x2,y2):
+    return float(math.sqrt(((x2-x1)**2)+((y2-y1)**2)))
+#sets explosion kick angle based upon if the center of the explosion is to the
+#left or right of the tank
+def setExplosionKickAngle(cx,cy):
+    tankHit = canvas.data.tankHit
+    if(tankHit == "tank1Top" or tankHit == "tank1Bottom"):
+        if cx<=canvas.data.tankLeftPlayer1 + 20:
+            canvas.data.explosionKickAngle = math.pi / 4
+        else:
+            canvas.data.explosionKickAngle = 3*math.pi/4
+    elif (tankHit == "tank2Top" or tankHit == "tank2Bottom"):
+        if cx<=canvas.data.tankLeftPlayer2 + 20:
+            canvas.data.explosionKickAngle = math.pi/4
+        else:
+            canvas.data.explosionKickAngle = 3*math.pi/4
+    return None
+
+#creates explosion kick
+def explosionKick(velocity, angle):
+    tankHits = canvas.data.tankHit
+    canvas.data.explosionKickTime += .1
+    t = canvas.data.explosionKickTime
+    try:
+        if(tankHits == "tank1Top" or tankHits == "tank1Bottom"):
+            doPlayer1ExplosionKick(velocity, angle,t)
+            
+        elif (tankHits == "tank2Top" or tankHits == "tank2Bottom"):
+            doPlayer2ExplosionKick(velocity, angle,t)
+            
+        else:
+            canvas.data.explosionKick = False
+            canvas.data.tankGravity = True
+            canvas.data.tankHit = ()
+            
+    except Exception as error:
+        print error
+        pass
+
+def doPlayer1ExplosionKick(velocity, angle,t):
+    #moves the tank by ammount depending on velocity, angle and time
+    canvas.data.tankLeftPlayer1 = canvas.data.originalTankLeftPlayer1+ xCoordinate(velocity, angle, t)
+    canvas.data.tankTopPlayer1 = canvas.data.originalTankTopPlayer1 -yCoordinate(velocity,angle,t)
+    #if tank hits the ground, stops explosion kick and turns gravity
+    #back on for tank to fall
+    if getColor(canvas.data.terrain, canvas.data.tankLeftPlayer1+ 20, canvas.data.tankTopPlayer1 + 6) != canvas.data.color:
+        canvas.data.tankGravity = True
+        canvas.data.explosionKick = False
+        canvas.data.tankHit = ""
+        canvas.data.explosionKickTime = 0
+
+def doPlayer2ExplosionKick(velocity, angle,t):
+    #moves the tank by ammount depending on velocity, angle and time
+    canvas.data.tankLeftPlayer2 = canvas.data.originalTankLeftPlayer2 + xCoordinate(velocity, angle, t)
+    canvas.data.tankTopPlayer2 = canvas.data.originalTankTopPlayer2 -yCoordinate(velocity,angle,t)
+    #if tank hits the ground, stops explosion kick and turns gravity
+    #back on for tank to fall
+    if getColor(canvas.data.terrain, canvas.data.tankLeftPlayer2+ 20, canvas.data.tankTopPlayer2 + 6) != canvas.data.color:
+        canvas.data.explosionKick = False
+        canvas.data.tankGravity = True
+        canvas.data.tankHit = ""
+        canvas.data.explosionKickTime = 0
+
+#handles moving left.
+def moveLeft():
+    #turns gravity off
+    canvas.data.animateGravity1,canvas.data.animateGravity2 =(False,False)
+    if(canvas.data.isPlayer1Turn == True):
+        if(canvas.data.player1MoveCount < 5):
+            return doPlayer1MoveLeft()
+        else:
+            canvas.data.isMovingLeft = False
+        
+    else:
+        if canvas.data.player2MoveCount < 5:
+            return doPlayer2MoveLeft()
+        else:
+            canvas.data.isMovingLeft = False
+        
+def doPlayer1MoveLeft():
+    #functions return None to skip over the other conditions in the function
+    canvas.data.tank1Gravity = True
+    #moves the tank up and over 1
+    canvas.data.tankLeftPlayer1-=1
+    canvas.data.tankTopPlayer1 -= 2
+    
+    #does not allow tank to go into terrain too far or climb up steep hills
+    if getColor(canvas.data.terrain, canvas.data.tankLeftPlayer1+10,
+                canvas.data.tankTopPlayer1) != "#1e368d":
+        canvas.data.tank1Gravity = False
+        canvas.data.tankLeftPlayer1 += 2
+        canvas.data.tankTopPlayer1 += 2
+        canvas.data.isMovingLeft = False
+        canvas.data.player1MoveCount += 1
+        return None
+    #if there is a drop of more than 40 pixels, tank is animated falling down
+    #tank also stops moving left
+    if getColor(canvas.data.terrain,canvas.data.tankLeftPlayer1+40,
+                canvas.data.tankTopPlayer1+40) == "#1e368d":
+        canvas.data.animateGravity1,canvas.data.animateGravity2 =(True,True)
+        canvas.data.tank1Gravity = False
+        canvas.data.isMovingLeft = False
+        canvas.data.player1MoveCount += 1
+        return None
+    #pulls the tank back down to stay on terrain while moving
+    else:
+        player1TankGravity()
+        redrawAll()
+    #if it has moved over 100 pixels, it stops
+    if(canvas.data.tankLeftPlayer1 == canvas.data.originalPosition - 100):
+        canvas.data.player1MoveCount += 1
+        canvas.data.isMovingLeft = False
+        canvas.data.tank1Gravity = False
+        canvas.data.animateGravity1,canvas.data.animateGravity2 =(True,True)
+        return None
+    else: return None
+        
+            
+def doPlayer2MoveLeft():
+    #functions return None to skip over the other conditions in the function
+    canvas.data.tank2Gravity = True
+    #moves tank up and over 1
+    canvas.data.tankLeftPlayer2-=1
+    canvas.data.tankTopPlayer2 -= 2
+    #does not allow tank to go into terrain too far or climb up steep hills
+    if getColor(canvas.data.terrain, canvas.data.tankLeftPlayer2+10,
+                canvas.data.tankTopPlayer2) != "#1e368d":
+        canvas.data.tank1Gravity = False
+        canvas.data.tankLeftPlayer2 += 1
+        canvas.data.tankTopPlayer2 += 2
+        canvas.data.isMovingLeft = False
+        canvas.data.player2MoveCount += 1
+        return None
+    #if there is a drop of more than 40 pixels, tank is animated falling down
+    #tank also stops moving left
+    if getColor(canvas.data.terrain,canvas.data.tankLeftPlayer2+40,
+                canvas.data.tankTopPlayer2+40) == "#1e368d":
+        canvas.data.animateGravity1 = True
+        canvas.data.animateGravity2 = True
+        canvas.data.tank2Gravity = False
+        canvas.data.isMovingLeft = False
+        canvas.data.player2MoveCount += 1
+        return None
+    #pulls the tank back down to stay on terrain while moving
+    else:
+        player2TankGravity()
+        redrawAll()
+    #if it has moved over 100 pixels, it stops
+    if(canvas.data.tankLeftPlayer2 == canvas.data.originalPosition - 100):
+        canvas.data.player2MoveCount += 1
+        canvas.data.isMovingLeft = False
+        canvas.data.tank2Gravity = False
+        canvas.data.animateGravity1 = True
+        canvas.data.animateGravity2 = True
+        return None
+    else: return None
+    
+def doPlayer1MoveRight():
+    canvas.data.tank1Gravity = True
+    canvas.data.tankLeftPlayer1+=1
+    canvas.data.tankTopPlayer1 -= 2
+    if getColor(canvas.data.terrain, canvas.data.tankLeftPlayer1+30,
+                canvas.data.tankTopPlayer1) != "#1e368d":
+        canvas.data.tank1Gravity = False
+        canvas.data.tankLeftPlayer1 -= 1
+        canvas.data.tankTopPlayer1 += 2
+        canvas.data.player1MoveCount += 1
+        canvas.data.isMovingRight = False
+        return None
+        
+    if getColor(canvas.data.terrain,canvas.data.tankLeftPlayer1,
+                canvas.data.tankTopPlayer1+40) == "#1e368d":
+        canvas.data.animateGravity1 = True
+        canvas.data.animateGravity2 = True
+        canvas.data.player1MoveCount += 1
+        canvas.data.tank1Gravity = False
+        canvas.data.isMovingRight = False
+        return None
+    else:
+        player1TankGravity()
+        redrawAll()
+    if(canvas.data.tankLeftPlayer1 == canvas.data.originalPosition + 100):
+        canvas.data.isMovingRight = False
+        canvas.data.tank1Gravity = False
+        canvas.data.animateGravity1 = True
+        canvas.data.player1MoveCount += 1
+        canvas.data.animateGravity2 = True
+        return None
+    else: return None
+    
+def doPlayer2MoveRight():
+    canvas.data.tank2Gravity = True
+    canvas.data.tankLeftPlayer2+=1
+    canvas.data.tankTopPlayer2 -= 2
+    if getColor(canvas.data.terrain, canvas.data.tankLeftPlayer2+30,
+                canvas.data.tankTopPlayer2) != "#1e368d":
+        canvas.data.tank2Gravity = False
+        canvas.data.tankLeftPlayer2 -= 1
+        canvas.data.tankTopPlayer2 += 2
+        canvas.data.player2MoveCount += 1
+        canvas.data.isMovingRight = False
+        return None
+    if getColor(canvas.data.terrain,canvas.data.tankLeftPlayer2,
+                canvas.data.tankTopPlayer2+40) == "#1e368d":
+        canvas.data.animateGravity1 = True
+        canvas.data.animateGravity2 = True
+        canvas.data.tank2Gravity = False
+        canvas.data.player2MoveCount += 1
+        canvas.data.isMovingRight = False
+        return None
+    else:
+        player2TankGravity()
+        redrawAll()
+    if(canvas.data.tankLeftPlayer2 == canvas.data.originalPosition + 100):
+        canvas.data.isMovingRight = False
+        canvas.data.tank2Gravity = False
+        canvas.data.animateGravity1 = True
+        canvas.data.player2MoveCount += 1
+        canvas.data.animateGravity2 = True
+        return None
+    else: return None
+
+def moveRight():
+    canvas.data.animateGravity1 = False
+    canvas.data.animateGravity2 = False
+    if(canvas.data.isPlayer1Turn == True):
+        if(canvas.data.player1MoveCount < 5):
+            return doPlayer1MoveRight()
+        else:
+            canvas.data.isMovingRight = False
+    else:
+        if(canvas.data.player2MoveCount < 5):
+            return doPlayer2MoveRight()
+        else:
+            canvas.data.isMovingRight = False
+        
+
+def shotFired():
+    tankLeftPlayer1 = canvas.data.tankLeftPlayer1
+    tankTopPlayer1 = canvas.data.tankTopPlayer1
+    tankLeftPlayer2 = canvas.data.tankLeftPlayer2
+    tankTopPlayer2 = canvas.data.tankTopPlayer2
+    
+    if(canvas.data.regularShotFired == True):
+        canvas.data.explosionKickVelocity = 20
+        regularShot(60,45)
+    elif(canvas.data.lightningFired == True):
+        canvas.data.explosionKickVelocity = 10
+        lightning(40,20)
+    elif(canvas.data.bigShotFired == True):
+        canvas.data.explosionKickVelocity = 20
+        regularShot(35,80)
+    elif(canvas.data.bounceShotFired == True):
+        canvas.data.explosionKickVelocity = 20
+        bounceShot()
+    elif(canvas.data.machineGunFired == True):
+        canvas.data.explosionKickVelocity = 5
+        v = canvas.data.velocity
+        if(canvas.data.count == 1):
+            for x in xrange(14):
+                x = random.randint(-5,5)
+                newPower = x +v
+                canvas.data.bulletList.append(newPower)
+        machineGun(tankLeftPlayer1,tankTopPlayer1,tankLeftPlayer2,tankTopPlayer2)
+    elif(canvas.data.jackhammerFired == True):
+        canvas.data.explosionKickVelocity = 2
+        jackhammer()
+    elif(canvas.data.threeShotFired == True):
+        canvas.data.explosionKickVelocity = 20
+        threeShot(tankLeftPlayer1,tankTopPlayer1,tankLeftPlayer2,tankTopPlayer2)
+ 
+def jackhammer():
+    points = 6
+    explosionRadius = 25
+    bounceCount = canvas.data.bounceCount
+    velocity = canvas.data.bounceShotVelocity
+    angle = canvas.data.angle
+    t = canvas.data.t - canvas.data.tOffset
+    originalLeft = canvas.data.jackhammerLeftPosition
+    originalTop = canvas.data.jackhammerTopPosition
+    if(canvas.data.bounceCount <= 4):
+        canvas.data.shotLeft = originalLeft + xCoordinate(velocity, angle, t)
+        canvas.data.shotTop = originalTop - yCoordinate(velocity,angle,t)
+        redrawAll()
+        collisionWithTank, tankHit = isCollisionWithTank("bullet")
+        canvas.data.ignoreCounter -= 1
+        if(((isCollision("bullet") and canvas.data.shotTop>5) or
+            (canvas.data.shotLeft>1270 or canvas.data.shotLeft<0)) and canvas.data.ignoreCounter <= 0):
+            t = 0
+            canvas.data.bounceCount += 1
+            canvas.data.bounceShotVelocity =40
+            canvas.data.angle = (math.pi/2)
+            canvas.data.tOffset = canvas.data.t
+            canvas.data.jackhammerLeftPosition = canvas.data.shotLeft
+            canvas.data.jackhammerTopPosition = canvas.data.shotTop
+            canvas.data.ignoreCounter = 20
+            canvas.data.calculatePoints = True
+            if canvas.data.isPlayer1Turn == True and collisionWithTank:
+                tankHit = canvas.gettags(tankHit)[0]
+                canvas.data.calcuatePoints = False
+                if tankHit != "tank1Top" and tankHit!= "tank1Bottom":
+                    canvas.data.player1Score += points
+                else:
+                    canvas.data.player2Score += points
+            elif canvas.data.isPlayer1Turn == False and collisionWithTank:
+                tankHit = canvas.gettags(tankHit)[0]
+                canvas.data.calcuatePoints =False
+                if tankHit != "tank2Top" and tankHit != "tank2Bottom": 
+                    canvas.data.player2Score += points
+                else:
+                    canvas.data.player1Score += points
+            canvas.data.stopExplosion = False
+            createExplosion(0,explosionRadius, canvas.data.shotLeft,
+                            canvas.data.shotTop,points)
+                
+            
+            
+    else:
+        canvas.data.stopExplosion = False
+        canvas.data.calculatePoints = False
+        createExplosion(0,explosionRadius, canvas.data.shotLeft,
+                        canvas.data.shotTop,points)
+        canvas.data.shotFired = False
+        canvas.data.jackhammerFired = False
+        canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+        canvas.data.ignoreCounter = 0
+
+#implements the threeShot weapon
+def threeShot(tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2, tankTopPlayer2):
+    legalBulletCount = 0
+    velocity = canvas.data.velocity
+    angle = canvas.data.angle
+    t = canvas.data.t
+    radius, points = (35,20)
+    canvas.delete("threeShot3","threeShot1","threeShot2")
+    
+    legalBulletCount+=canvas.data.threeShot1.drawShot(velocity, angle,t,
+    tankLeftPlayer1,tankTopPlayer1,tankLeftPlayer2,tankTopPlayer2,radius,points)
+    legalBulletCount+=canvas.data.threeShot2.drawShot(velocity,
+    angle-((10*math.pi)/360),t, tankLeftPlayer1,tankTopPlayer1,tankLeftPlayer2,
+    tankTopPlayer2, radius, points)
+    legalBulletCount+=canvas.data.threeShot3.drawShot(velocity,
+    angle+((10*math.pi)/360),t, tankLeftPlayer1,tankTopPlayer1,tankLeftPlayer2,
+    tankTopPlayer2, radius, points)
+    #if all bullets have exploded, then the shot has been completed
+    if(legalBulletCount == 0):
+        #canvas.data.calculateTriShotPoints1=True
+        #canvas.data.calculateTriShotPoints2=True
+        #canvas.data.calculateTriShotPoints3=True
+        initThreeShot()
+        canvas.data.threeShot1.reset()
+        canvas.data.threeShot2.reset()
+        canvas.data.threeShot3.reset()
+        canvas.data.shotFired = False
+        canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+
+def machineGun(tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2, tankTopPlayer2):
+    legalBulletCount = 0
+    velocity = canvas.data.velocity
+    angle = canvas.data.angle
+    t = canvas.data.t
+    radius, points = (15,10)
+    bullets = canvas.data.bulletList
+    canvas.delete("machineGunShot1","machineGunShot2","machineGunShot3",
+    "machineGunShot4","machineGunShot5","machineGunShot6","machineGunShot7","machineGunShot8",
+    "machineGunShot9","machineGunShot10","machineGunShot11","machineGunShot12","machineGunShot13")
+    if(t>0):
+        legalBulletCount+=canvas.data.machineGun1.drawShot(bullets[1], angle,t,
+        tankLeftPlayer1,tankTopPlayer1,tankLeftPlayer2,
+        tankTopPlayer2,radius,points)
+        t-=.5
+    if(t>0):
+        legalBulletCount+=canvas.data.machineGun2.drawShot(bullets[2], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):
+        legalBulletCount+=canvas.data.machineGun3.drawShot(bullets[3], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):
+        legalBulletCount+=canvas.data.machineGun4.drawShot(bullets[4], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):
+        legalBulletCount+=canvas.data.machineGun5.drawShot(bullets[5], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):
+        legalBulletCount+=canvas.data.machineGun6.drawShot(bullets[6], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):
+        legalBulletCount+=canvas.data.machineGun7.drawShot(bullets[7], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):
+        legalBulletCount+=canvas.data.machineGun8.drawShot(bullets[8], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):
+        legalBulletCount+=canvas.data.machineGun9.drawShot(bullets[9], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):    
+        legalBulletCount+=canvas.data.machineGun10.drawShot(bullets[10], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):    
+        legalBulletCount+=canvas.data.machineGun11.drawShot(bullets[11], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):    
+        legalBulletCount+=canvas.data.machineGun12.drawShot(bullets[12], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+    if(t>0):   
+        legalBulletCount+=canvas.data.machineGun13.drawShot(bullets[13], angle,t,
+        tankLeftPlayer1, tankTopPlayer1, tankLeftPlayer2,
+        tankTopPlayer2, radius, points)
+        t-=.5
+     
+    if(legalBulletCount == 0):
+        canvas.data.machineGunFired = False
+        canvas.data.shotFired = False
+        canvas.data.shotSet = set()
+        resetMachineGun()
+        canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+
+def resetMachineGun():
+    canvas.data.machineGun1.reset()
+    canvas.data.machineGun2.reset()
+    canvas.data.machineGun3.reset()
+    canvas.data.machineGun4.reset()
+    canvas.data.machineGun5.reset()
+    canvas.data.machineGun6.reset()
+    canvas.data.machineGun7.reset()
+    canvas.data.machineGun8.reset()
+    canvas.data.machineGun9.reset()
+    canvas.data.machineGun10.reset()
+    canvas.data.machineGun11.reset()
+    canvas.data.machineGun12.reset()
+    canvas.data.machineGun13.reset()
+    
+#draws ligtning bolt
+def drawLightningBolt(shotLeft, shotTop, tankLeft, tankTop,count):
+    #different algorithim for drawing the bolt if its from the left or right
+    if shotLeft <= tankLeft:
+        #draws it in a loop 20 times so that its not deleted right away
+        if count < 20:
+            canvas.delete("lightning")
+            x = shotLeft+2
+            y = shotTop+2
+            x1 = tankLeft
+            y1 = tankTop
+            try: angle = math.atan((y1-y)/((x-x1)))
+            except:
+                angle = (3*math.pi/2) #sets angle to 90 because cant divide by 0
+            radius = math.sqrt(((x1-x)**2)+((y1-y)**2))    
+            
+            canvas.create_line(x1,y1,
+            x1-((math.cos(angle-math.radians(10)))*(radius/2)),
+            y1+(math.sin(angle-math.radians(10))*(radius/2)), fill = "yellow",
+            width = 2, tag  = "lightning")
+            
+            canvas.create_line(x,y, x+(math.cos(angle-math.radians(10))*(radius/2)),
+            y - (math.sin(angle-math.radians(10))*(radius/2)), fill = "yellow",
+            width = 2, tag="lightning")
+            
+            canvas.create_line(x1-(math.cos(angle-math.radians(10))*(radius/2)),
+                               y1+(math.sin(angle-math.radians(10))*(radius/2)),
+                               x+(math.cos(angle-math.radians(10))*(radius/2)),
+                               y -(math.sin(angle-math.radians(10))*(radius/2)),
+                               fill = "yellow", width = 2, tag="lightning")
+            delay = 20
+            canvas.after(delay, drawLightningBolt, shotLeft, shotTop, tankLeft,
+                         tankTop, count+1)
+        else:
+            canvas.delete("lightning")
+    else:
+        #draws in loop 20 times so its not deleted right away
+        if count < 20:
+            canvas.delete("lightning")
+            x = shotLeft+2
+            y = shotTop+2
+            x1 = tankLeft
+            y1 = tankTop
+            angle = math.atan((y1-y)/((x-x1)))
+            radius = math.sqrt(((x1-x)**2)+((y1-y)**2))
+            canvas.create_line(x1,y1,
+                               x1+((math.cos(angle-math.radians(10)))*(radius/2)),
+                               y1-(math.sin(angle-math.radians(10))*(radius/2)),
+                               fill = "yellow", width = 2, tag  = "lightning")
+            canvas.create_line(x,y,x-(math.cos(angle-math.radians(10))*(radius/2)),
+                               y +(math.sin(angle-math.radians(10))*(radius/2)),
+                               fill = "yellow", width = 2, tag="lightning")
+            canvas.create_line(x1+(math.cos(angle-math.radians(10))*(radius/2)),
+                               y1-(math.sin(angle-math.radians(10))*(radius/2)),
+                               x-(math.cos(angle-math.radians(10))*(radius/2)),
+                               y +(math.sin(angle-math.radians(10))*(radius/2)),
+                               fill = "yellow", width = 2, tag="lightning")
+            delay = 20
+            canvas.after(delay, drawLightningBolt, shotLeft, shotTop, tankLeft, tankTop, count+1)
+        else:
+            canvas.delete("lightning")
+
+#implements lightning shot    
+def lightning(points, explosionRadius):
+    velocity = canvas.data.velocity
+    angle = canvas.data.angle
+    t = canvas.data.t
+    points = points
+    if(canvas.data.isPlayer1Turn == True):
+        canvas.data.shotLeft = (canvas.data.tankLeftPlayer1 + 20 +
+                                xCoordinate(velocity, angle, t))
+        canvas.data.shotTop = (canvas.data.tankTopPlayer1 - 10- 
+                              yCoordinate(velocity,angle,t))
+        shotLeft,shotTop,tankLeft,tankTop=(canvas.data.shotLeft,
+        canvas.data.shotTop, canvas.data.tankLeftPlayer2+20,
+        canvas.data.tankTopPlayer2)
+        #if the distance between the tank and the bullet is less than 60 then
+        #it draws a lightning bolt and adds the points
+        if distanceBetweenPoints(shotLeft, shotTop,tankLeft,tankTop) < 60:
+            drawLightningBolt(shotLeft, shotTop, tankLeft, tankTop,0)
+            canvas.data.player1Score +=points
+            canvas.data.shotFired = False
+            canvas.data.lightningFired = False
+            canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+            
+            
+        elif(isCollision("bullet") == True and canvas.data.shotTop>5):
+            canvas.data.shotFired = False
+            canvas.data.lightningFired = False
+            canvas.data.stopExplosion = False
+            collisionWithTank, tankHit = isCollisionWithTank("bullet")
+            #incase the explosion hits the same tank, it checks again if there
+            #is collision with the bullet
+            if(collisionWithTank == True):
+                canvas.data.calculatePoints = False
+                createExplosion(0,explosionRadius,canvas.data.shotLeft,
+                            canvas.data.shotTop, points)
+                if (canvas.gettags(tankHit)[0] == "tank1Top" or
+                    canvas.gettags(tankHit)[0] =="tank1Bottom"):
+                    canvas.data.player2Score += points
+                else:
+                    canvas.data.player1Score += points
+                canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+            #if it hits the ground then it creates and explosion
+            else:
+                canvas.data.calculatePoints = True
+                createExplosion(0,explosionRadius,canvas.data.shotLeft,
+                            canvas.data.shotTop, points)
+                canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+        redrawAll()
+        
+        
+    else:
+        canvas.data.shotLeft = (canvas.data.tankLeftPlayer2 + 20 +
+                                xCoordinate(velocity, angle, t))
+        canvas.data.shotTop = (canvas.data.tankTopPlayer2 - 10 -
+                              yCoordinate(velocity,angle,t))
+        shotLeft,shotTop,tankLeft,tankTop=(canvas.data.shotLeft,
+        canvas.data.shotTop, canvas.data.tankLeftPlayer1+20,
+        canvas.data.tankTopPlayer1)
+        if distanceBetweenPoints(shotLeft, shotTop,tankLeft,tankTop) < 60:
+            drawLightningBolt(shotLeft, shotTop, tankLeft, tankTop,0)
+            canvas.data.player2Score +=points
+            canvas.data.shotFired = False
+            canvas.data.lightningFired = False
+            canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+            
+        elif(isCollision("bullet") == True and canvas.data.shotTop>5):
+            canvas.data.shotFired = False
+            canvas.data.lightningFired = False
+            canvas.data.stopExplosion = False
+            collisionWithTank, tankHit = isCollisionWithTank("bullet")
+            if(collisionWithTank == True):
+                canvas.data.calculatePoints = False
+                createExplosion(0,explosionRadius,canvas.data.shotLeft,
+                            canvas.data.shotTop, points)
+                if (canvas.gettags(tankHit)[0] == "tank2Top" or
+                    canvas.gettags(tankHit)[0] =="tank2Bottom"):
+                    canvas.data.player1Score += points
+                else:
+                    canvas.data.player2Score += points
+                canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+            else:
+                canvas.data.calculatePoints = True
+                createExplosion(0,explosionRadius,canvas.data.shotLeft,
+                            canvas.data.shotTop, points)
+                canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+        redrawAll()
+    
+  
+    if(canvas.data.shotTop + 3 >= canvas.data.canvasHeight):
+        canvas.data.shotFired = False
+        canvas.data.regularShotFired = False
+        canvas.data.bigShotFired = False
+        canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+        
+#implements the Single Shot and Big Shot
+def regularShot(points, explosionRadius):
+    velocity = canvas.data.velocity
+    angle = canvas.data.angle
+    t = canvas.data.t
+    if(canvas.data.isPlayer1Turn == True):
+        #changes the coordinates of the shot/ makes it move
+        canvas.data.shotLeft = (canvas.data.tankLeftPlayer1 + 20 +
+                                xCoordinate(velocity, angle, t))
+        canvas.data.shotTop = (canvas.data.tankTopPlayer1 - 10- 
+                              yCoordinate(velocity,angle,t))
+        #if there is collision, turns off shotFired so it doesnt draw again
+        if(isCollision("bullet") == True and canvas.data.shotTop>5):
+            canvas.data.shotFired = False
+            canvas.data.regularShotFired = False
+            canvas.data.bigShotFired = False
+            canvas.data.stopExplosion = False
+            collisionWithTank, tankHit = isCollisionWithTank("bullet")
+            #if its collision with tank then add points to the proper tank and
+            #create explosion
+            if(collisionWithTank == True):
+                canvas.data.calculatePoints = False
+                createExplosion(0,explosionRadius,canvas.data.shotLeft,
+                            canvas.data.shotTop, points)
+                if (canvas.gettags(tankHit)[0] == "tank1Top" or
+                    canvas.gettags(tankHit)[0] =="tank1Bottom"):
+                    canvas.data.player2Score += points
+                else:
+                    canvas.data.player1Score += points
+                canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+            #if its not collision with tank, then must be with terrain so just
+            #create explosion
+            else:
+                canvas.data.calculatePoints = True
+                createExplosion(0,explosionRadius,canvas.data.shotLeft,
+                            canvas.data.shotTop, points)
+                canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+        redrawAll()
+    else:
+        canvas.data.shotLeft = (canvas.data.tankLeftPlayer2 + 20 +
+                                xCoordinate(velocity, angle, t))
+        canvas.data.shotTop = (canvas.data.tankTopPlayer2 - 10 -
+                              yCoordinate(velocity,angle,t))
+        if(isCollision("bullet") == True and canvas.data.shotTop>5):
+            canvas.data.shotFired = False
+            canvas.data.regularShotFired = False
+            canvas.data.bigShotFired = False
+            canvas.data.stopExplosion = False
+            collisionWithTank, tankHit = isCollisionWithTank("bullet")
+            if(collisionWithTank == True):
+                canvas.data.calculatePoints = False
+                createExplosion(0,explosionRadius,canvas.data.shotLeft,
+                            canvas.data.shotTop, points)
+                if (canvas.gettags(tankHit)[0] == "tank2Top" or
+                    canvas.gettags(tankHit)[0] =="tank2Bottom"):
+                    canvas.data.player1Score += points
+                else:
+                    canvas.data.player2Score += points
+                canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+            else:
+                canvas.data.calculatePoints = True
+                createExplosion(0,explosionRadius,canvas.data.shotLeft,
+                            canvas.data.shotTop, points)
+                canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+        redrawAll()
+    
+  
+    if(canvas.data.shotTop + 3 >= canvas.data.canvasHeight):
+        canvas.data.shotFired = False
+        canvas.data.regularShotFired = False
+        canvas.data.bigShotFired = False
+        canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+        
+def bounceShot():
+    points = 40
+    bounceCount = canvas.data.bounceCount
+    velocity = canvas.data.bounceShotVelocity
+    angle = canvas.data.angle
+    t = canvas.data.t - canvas.data.tOffset
+    originalLeft = canvas.data.originalShotLeftPosition
+    originalTop = canvas.data.originalShotTopPosition
+    explosionRadius = 40
+    #only bounces 4 times, if bouncebount is higher than it just explodes
+    if(canvas.data.bounceCount <= 4):
+        canvas.data.shotLeft = originalLeft + xCoordinate(velocity, angle, t)
+        canvas.data.shotTop = originalTop - yCoordinate(velocity,angle,t)
+        redrawAll()
+        collisionWithTank, tankHit = isCollisionWithTank("bullet")
+        #if it hits a tank it explodes and adds the points
+        if((collisionWithTank and canvas.data.shotTop>5) or
+            (canvas.data.shotLeft>1260 or canvas.data.shotLeft<0)):
+            
+            canvas.data.shotFired = False
+            canvas.data.bounceShotFired = False
+            canvas.data.stopExplosion = False
+            canvas.data.calculatePoints = False
+            createExplosion(0,explosionRadius, canvas.data.shotLeft,
+                            canvas.data.shotTop,points)
+            
+            if canvas.data.isPlayer1Turn == True and collisionWithTank:
+                tankHit = canvas.gettags(tankHit)[0]
+                if tankHit != "tank1Top" and tankHit!= "tank1Bottom":
+                    canvas.data.player1Score += points
+                else:
+                    canvas.data.player2Score += points
+            elif canvas.data.isPlayer1Turn == False and collisionWithTank:
+                tankHit = canvas.gettags(tankHit)[0]
+                if tankHit != "tank2Top" and tankHit != "tank2Bottom": 
+                    canvas.data.player2Score += points
+                else:
+                    canvas.data.player1Score += points
+            canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+            redrawAll()
+        #print isCollision("bullet")
+        #if it hits the terrain, it adds to the bounce count
+        if(isCollision("bullet") and canvas.data.shotTop > 5):
+            t = 0
+            canvas.data.bounceCount += 1
+            #print canvas.data.bounceCount
+            canvas.data.tOffset = canvas.data.t
+            canvas.data.originalShotLeftPosition = canvas.data.shotLeft
+            canvas.data.originalShotTopPosition = canvas.data.shotTop
+            
+    else:
+        canvas.data.shotFired = False
+        canvas.data.bounceShotFired = False
+        canvas.data.stopExplosion = False
+        canvas.data.calculatePoints = True
+        createExplosion(0,explosionRadius, canvas.data.shotLeft,
+                        canvas.data.shotTop,points)
+        canvas.data.isPlayer1Turn = not canvas.data.isPlayer1Turn
+        redrawAll()
+
+#this type of gravity animates the falling tank
+def player1AnimateGravity():
+    if(canvas.data.animateGravity1 == False): return None
+    try:
+        if isCollisionWithTerrain("tank1Top", "tank1Bottom") == False:
+            canvas.data.tankTopPlayer1+=1
+        else: canvas.data.animateGravity1 = False
+        redrawAll()
+    except Exception as error:
+        canvas.data.tankTopPlayer1+=1
+        print error
+        
+
+#this type of gravity animates the falling tank        
+def player2AnimateGravity():
+    if(canvas.data.animateGravity2 == False): return None
+    try:
+        if isCollisionWithTerrain("tank2Top", "tank2Bottom") == False:
+            canvas.data.tankTopPlayer2+=1
+        else: canvas.data.animateGravity2 = False
+        redrawAll()
+    except Exception as error:
+        canvas.data.tankTopPlayer2+=1
+        print error
+        
+#constantly pulls the tank down immediately unless there is ground underneath
+def player1TankGravity():
+    if(canvas.data.tank1Gravity == False): return None
+    tankTopPlayer1  = canvas.data.tankTopPlayer1
+    tankLeftPlayer1 = canvas.data.tankLeftPlayer1
+    try:
+        while isCollisionWithTerrain("tank1Top", "tank1Bottom") == False:
+            canvas.data.tankTopPlayer1+=1
+            redrawAll()
+        redrawAll()
+        canvas.data.tank1Gravity = False
+    except Exception as error:
+        canvas.data.tankTopPlayer1+=1
+        print error
+
+#constantly pulls the tank down unless there is ground underneath
+def player2TankGravity():
+    if(canvas.data.tank2Gravity == False): return None
+    tankTopPlayer2  = canvas.data.tankTopPlayer2
+    tankLeftPlayer2 = canvas.data.tankLeftPlayer2
+    try:
+        while isCollisionWithTerrain("tank2Top", "tank2Bottom") == False:
+            canvas.data.tankTopPlayer2+=1
+            redrawAll()
+        redrawAll()
+        canvas.data.tank2Gravity = False
+    except Exception as error:
+        canvas.data.tankTopPlayer2+=1
+        print error
+
+def main():
+    if canvas.data.isGameOver == False:
+        player1AnimateGravity()
+        player2AnimateGravity()
+        if(canvas.data.shotFired == True):
+            canvas.data.t+=.1
+            #count is used for machine gun
+            canvas.data.count+=1
+            if(canvas.data.count > 13):
+                canvas.data.count = 13
+            shotFired()
+            if(canvas.data.shotFired == False):
+                #resets everything bullet related so they can be fired again
+                canvas.data.t = 0
+                canvas.data.bounceCount = 0
+                canvas.data.tOffset = 0
+                canvas.data.count = 0
+                canvas.data.bulletList = []
+                canvas.data.shotTop = canvas.data.originalShotTopPosition
+                canvas.data.turnCount -=1
+                #adjusts turret angle
+                if canvas.data.isPlayer1Turn == True:
+                    canvas.data.widget._int1.setentry(canvas.data.player1TurretAngle)
+                    canvas.data.widget._int.setentry(canvas.data.player1Velocity)
+                else:
+                    canvas.data.widget._int1.setentry(canvas.data.player2TurretAngle)
+                    canvas.data.widget._int.setentry(canvas.data.player2Velocity)
+                #game over if no turns left
+                if canvas.data.turnCount == 0:
+                    canvas.data.isGameOver = True
+        
+        if(canvas.data.explosionKick == True):
+            #creates explosion kick/moves tank
+            explosionKick(canvas.data.explosionKickVelocity,
+                          canvas.data.explosionKickAngle)
+            
+        if (canvas.data.isPlayer1Turn == True):
+            try: canvas.data.player1TurretAngle=(canvas.data.widget._int1.get())
+            except: pass
+        else:
+            try: canvas.data.player2TurretAngle = canvas.data.widget._int1.get()
+            except: pass
+        if(canvas.data.isMovingLeft == True):
+            moveLeft()
+        elif(canvas.data.isMovingRight == True):
+            moveRight()
+    else:
+        gameOver()
+            
+    delay = 10
+    canvas.after(delay,main)
+    redrawAll()
+    
+#stops the game and displays winner
+def gameOver():
+    #only draws this stuff once
+    if canvas.data.gameOverCount == 0:
+        #displays winner
+        if canvas.data.player1Score > canvas.data.player2Score:
+            canvas.create_text(625,300, text = "Player 1 Wins!",
+                               font = "Helvetica 25", tag = "gameOver")
+        elif(canvas.data.player1Score< canvas.data.player2Score):
+            canvas.create_text(625,300, text = "Player 2 Wins!",
+                               font = "Helvetica 25", tag = "gameOver")
+        else:
+            canvas.create_text(625,300, text = "Tie Game",
+                               font = "Helvetica 25", tag = "gameOver")
+        
+        canvas.data.playAgain = PhotoImage(file = "playAgain.gif")
+        playAgainButton = Button(canvas, image = canvas.data.playAgain,
+                                 command = initNewGame, borderwidth = 0)
+        canvas.create_window(625,500, window = playAgainButton, tag ="gameOver")
+        canvas.data.gameCount = 1
+        canvas.data.gameOverCount = 1
+        canvas.data.menuOn = True
+        canvas.data.turnCount = 20
+    
+        
+#creates background, title, and also creates the angle, power and weaponselect   
+def drawMenuScreen():
+    canvas.delete("gameOver")
+    canvas.create_rectangle(0,0,canvas.data.canvasWidth,canvas.data.canvasHeight,
+                            fill = "black", tag = "menu")
+    canvas.create_image(625, 100, anchor=N, image=canvas.data.logo, tag ="menu")
+    canvas.create_text(625,300, text = "Choose Terrain:", fill = "Red",
+                       font = "Helvetica 25", tag = "menu")
+    global asshole
+    asshole = Canvas(root, height = 80, width = 1250)
+    asshole.pack(side = "bottom")
+    canvas.data.fireImage = PhotoImage(file = "FireButton.gif")
+    canvas.data.fire = Button(asshole, command = fireButton, borderwidth = 0,
+                  image = canvas.data.fireImage)
+    canvas.data.fire.pack(side = "top")
+    canvas.data.fire.config(state = DISABLED)
+    
+    #creates background of the bottom canvas where fire button is
+    canvas.data.image = PhotoImage(file = "textureGradient.gif")
+    asshole.create_image(0,0, image = canvas.data.image, anchor = NW)
+    canvas.data.weaponSelect = WeaponSelect(asshole)
+    canvas.data.widget = Counter(asshole)
+    
+#only used for subsequent games so that it doesnt recreate the GUI weapon select
+#and angle/power counters
+def drawMenuScreenNewGame():
+    canvas.create_rectangle(0,0,canvas.data.canvasWidth,canvas.data.canvasHeight,
+                            fill = "black", tag = "menu")
+    canvas.create_image(625, 100, anchor=N, image=canvas.data.logo, tag ="menu")
+    canvas.create_text(625,300, text = "Choose Terrain:", fill = "Red",
+                       font = "Helvetica 25", tag = "menu")
+
+#draws score and move count 
+def drawScore():
+    canvas.create_text(3,0, text = "Player 1: %d" %canvas.data.player1Score,
+                       fill = "red",font ="Futura 25",anchor = NW, tag ="score")
+    canvas.create_text(1250,0,text = "Player 2: %d" %canvas.data.player2Score,
+                       fill = "red", font = "Futura 25",anchor = NE, tag ="score")
+    canvas.create_text(625,20, text ="Turns Left: %d" %canvas.data.turnCount,
+                       tag = "score", fill = "red")
+    asshole.create_text(200,100, text = "Player 1 Moves Left: %d" %(5-canvas.data.player1MoveCount),
+                        tag = "moveCount", fill = "yellow")
+    asshole.create_text(1050,100, text = "Player 2 Moves Left: %d" %(5-canvas.data.player2MoveCount),
+                        tag = "moveCount", fill= "yellow")
+
+#redraws all items besides the terrain
+def redrawAll():
+    canvas.delete("tank1Turret","tank1Bottom","tank1Top", "tank2Turret",
+                  "tank2Bottom","tank2Top", "bullet", "score")
+    asshole.delete("moveCount")
+    shotSize = 3
+    shotLeft = canvas.data.shotLeft
+    shotTop = canvas.data.shotTop
+    #doesnt draw bullets for machine gun or three shot
+    if(canvas.data.shotFired == True and canvas.data.machineGunFired == False
+       and canvas.data.threeShotFired == False):
+        canvas.create_oval(shotLeft, shotTop,shotLeft+shotSize,shotTop+shotSize,
+                           fill = "yellow", tag = "bullet", outline = "yellow")
+    tankTopPlayer1  = canvas.data.tankTopPlayer1
+    tankLeftPlayer1 = canvas.data.tankLeftPlayer1
+    tankLeftPlayer2 = canvas.data.tankLeftPlayer2
+    tankTopPlayer2 = canvas.data.tankTopPlayer2
+    try:
+        turretAngle1 = radians(float(canvas.data.player1TurretAngle))
+        turretAngle2 = radians(float(canvas.data.player2TurretAngle))
+    except:
+        turretAngle1 = 0
+        turretAngle2 = 0
+    drawScore()
+    #player 1
+    canvas.create_line(tankLeftPlayer1+20, tankTopPlayer1-6,
+                       (tankLeftPlayer1+20+(math.cos(turretAngle1)*20.0)),
+                       (tankTopPlayer1-6-(math.sin(turretAngle1))*20.0),width=2,
+                       fill = "#a9a9a9", tag = "tank1Turret")
+    canvas.create_polygon((tankLeftPlayer1,tankTopPlayer1),(tankLeftPlayer1 +40,
+        tankTopPlayer1),(tankLeftPlayer1+34,tankTopPlayer1+6),
+        (tankLeftPlayer1+ 6,tankTopPlayer1+6), fill = "red", tag ="tank1Bottom")
+    canvas.create_polygon((tankLeftPlayer1+ 6,tankTopPlayer1),
+    (tankLeftPlayer1+12,tankTopPlayer1-6),(tankLeftPlayer1+28,tankTopPlayer1-6),
+    (tankLeftPlayer1+34,tankTopPlayer1), fill = "red", tag = "tank1Top")
+    
+    #player 2
+    canvas.create_line(tankLeftPlayer2+20, tankTopPlayer2-6,
+                       (tankLeftPlayer2+20+(math.cos(turretAngle2)*20.0)),
+                       (tankTopPlayer2-6-(math.sin(turretAngle2))*20.0),width=2,
+                       fill = "#a9a9a9", tag = "tank2Turret")
+    canvas.create_polygon((tankLeftPlayer2,tankTopPlayer2),
+    (tankLeftPlayer2 + 40,tankTopPlayer2),(tankLeftPlayer2+34,tankTopPlayer2+6),
+    (tankLeftPlayer2+ 6,tankTopPlayer2+6), fill = "orange", tag = "tank2Bottom")
+    canvas.create_polygon((tankLeftPlayer2+ 6,tankTopPlayer2),
+    (tankLeftPlayer2+12,tankTopPlayer2-6),(tankLeftPlayer2+28,tankTopPlayer2-6),
+    (tankLeftPlayer2+34,tankTopPlayer2), fill = "orange", tag = "tank2Top")
+
+#deletes everything and starts a new game
+def initNewGame():
+    canvas.delete("gameOver")
+    canvas.delete("tank1Turret","tank1Bottom","tank1Top", "tank2Turret",
+                  "tank2Bottom","tank2Top", "bullet", "score")
+    canvas.delete("terrain")
+    init()
+
+def init():
+    initTanks()
+    initWeapons()
+    initShot()
+    canvas.data.color = "#1e368d"  
+    canvas.data.isGameOver = False
+    canvas.data.menuOn =True
+    canvas.data.turnCount = 20
+    canvas.data.threeShot1 = MultipleBulletShot("threeShot1")
+    canvas.data.threeShot2 = MultipleBulletShot("threeShot2")
+    canvas.data.threeShot3 = MultipleBulletShot("threeShot3")
+    canvas.data.tankHit = ()
+    canvas.data.player1Score = 0
+    canvas.data.player2Score = 0
+    canvas.data.explosionKick = False
+    canvas.data.explosionKickVelocity = 0
+    canvas.data.explosionKickAngle = math.pi / 2
+    canvas.data.explosionKickTime= 0
+    canvas.data.gameOverCount = 0
+    initMenuScreen()
+       
+def initMenuScreen():
+    buttonImage = PhotoImage(file = "battle.gif")
+    b1 = Button(canvas, image =buttonImage,command=button1Pressed,borderwidth=0)
+    canvas.data.button1 = b1
+    canvas.create_window(625, 600, window=b1, tag = "menu")
+    b2 = Button(canvas, text = "instructions",command =instructionButtonPressed,
+                borderwidth = 0)
+    canvas.create_window(625,650, window = b2, tag = "menu")
+    canvas.data.logo = PhotoImage(file="logo2.gif")
+    canvas.data.button1.image= buttonImage
+    #displays the little mt rushmore image as button so that if its clicked, it
+    #uses mt rushmore terrain
+    canvas.data.smallMtRushmoreTerrain = PhotoImage(file ="MtRushmoreSmall.gif")
+    b3 = Button(canvas, image =canvas.data.smallMtRushmoreTerrain,
+                command = mtRushmoreSelected, borderwidth = 0)
+    canvas.create_window(200,450, window = b3, tag = "menu")
+    
+    #creates button to select the hill as terrain and displays a preview of it
+    canvas.data.smallHill = PhotoImage(file = "smallHill.gif")
+    b4 = Button(canvas, image = canvas.data.smallHill,
+                command = smallHillSelected, borderwidth = 0)
+    canvas.create_window(500,450, window = b4, tag = "menu")
+    
+    #button to select flat terrain, shows preview
+    canvas.data.smallFlats = PhotoImage(file = "smallFlats.gif")
+    b5 = Button(canvas, image = canvas.data.smallFlats,
+                command = smallFlatsSelected, borderwidth = 0)
+    canvas.create_window(800,450, window = b5, tag = "menu")
+    
+    #button to select mountan terrain, shows preview
+    canvas.data.smallMountain = PhotoImage(file = "smallMountain.gif")
+    b6 = Button(canvas, image = canvas.data.smallMountain,
+                command = smallMountainSelected, borderwidth = 0)
+    canvas.create_window(1100,450, window = b6, tag = "menu")
+    #only does drawMenuScreen first time around so that the GUI isnt messed with
+    if canvas.data.gameCount == 0:
+        drawMenuScreen()
+    else:
+        drawMenuScreenNewGame()
+    #sets flat terrain as default
+    smallFlatsSelected()
+    
+
+def initTanks():
+    canvas.data.player1MoveCount = 0
+    canvas.data.player2MoveCount = 0
+    canvas.data.tank1Gravity = False
+    canvas.data.tank2Gravity = False
+    canvas.data.animateGravity1 = False
+    canvas.data.animateGravity2 = False
+    canvas.data.tankTopPlayer1 = 292
+    canvas.data.tankLeftPlayer1= 200
+    canvas.data.originalTankLeftPlayer1 = 200
+    canvas.data.originalTankTopPlayer1 = 292
+    canvas.data.tankLeftPlayer2 = 840
+    canvas.data.tankTopPlayer2 = 394
+    canvas.data.originalTankLeftPlayer2 = 840
+    canvas.data.originalTankTopPlayer2 = 394
+    canvas.data.isPlayer1Turn = True
+    canvas.data.isMovingLeft = False
+    canvas.data.isMovingRight = False
+    canvas.data.player1TurretAngle = 50
+    canvas.data.player2TurretAngle = 130
+    canvas.data.player1Velocity = 50
+    canvas.data.player2Velocity = 50
+   
+def initWeapons():
+    canvas.data.stopExplosion = False
+    initThreeShot()
+    initMachineGun()
+    canvas.data.lightningFired = False
+    canvas.data.regularShotFired = False
+    canvas.data.bounceShotFired = False
+    canvas.data.bigShotFired = False
+    canvas.data.bounceCount = 0
+    canvas.data.jackhammerFired = False
+    canvas.data.ignoreCounter = 0
+
+def initMachineGun():
+    canvas.data.machineGunFired = False
+    canvas.data.shotSet = set()
+    #creates all machine gun bullets
+    canvas.data.machineGun1= MultipleBulletShot("machineGunShot1")
+    canvas.data.machineGun2= MultipleBulletShot("machineGunShot2")
+    canvas.data.machineGun3= MultipleBulletShot("machineGunShot3")
+    canvas.data.machineGun4= MultipleBulletShot("machineGunShot4")
+    canvas.data.machineGun5= MultipleBulletShot("machineGunShot5")
+    canvas.data.machineGun6= MultipleBulletShot("machineGunShot6")
+    canvas.data.machineGun7= MultipleBulletShot("machineGunShot7")
+    canvas.data.machineGun8= MultipleBulletShot("machineGunShot8")
+    canvas.data.machineGun9= MultipleBulletShot("machineGunShot9")
+    canvas.data.machineGun10= MultipleBulletShot("machineGunShot10")
+    canvas.data.machineGun11= MultipleBulletShot("machineGunShot11")
+    canvas.data.machineGun12= MultipleBulletShot("machineGunShot12")
+    canvas.data.machineGun13= MultipleBulletShot("machineGunShot13")
+
+def initThreeShot():
+    canvas.data.threeShotFired = False
+    canvas.data.shotSet = set()
+
+def initShot():
+    canvas.data.shotFired = False
+    canvas.data.shotLeft = 0
+    canvas.data.shotTop = 0
+    canvas.data.t = 0
+    canvas.data.originalPosition = canvas.data.tankLeftPlayer1
+    canvas.data.originalShotLeftPosition = canvas.data.tankLeftPlayer1
+    canvas.data.originalShotTopPosition = canvas.data.tankTopPlayer1
+    canvas.data.velocity = 60
+    canvas.data.angle = (math.pi/3)
+    canvas.data.tOffset = 0
+    canvas.data.count = 0
+    canvas.data.threeShotFired = False
+    canvas.data.bulletList = []
+    
+def run():
+    global root
+    root = Tk()
+    global canvas
+    canvas = Canvas(root,width= 1250,height = 765, bg = "#1e368d")
+    canvas.pack()
+    root.resizable(width=0, height=0)
+    class Struct: pass
+    canvas.data = Struct()
+    canvas.data.gravity = 6.66666
+    canvas.data.gameCount = 0
+    canvas.data.canvasHeight = 800
+    canvas.data.canvasWidth = 1250
+    canvas.data.widget = 0
+    init()
+    root.bind("<Key>", keyPressed)
+    main()
+    root.mainloop()
+    
+run()
