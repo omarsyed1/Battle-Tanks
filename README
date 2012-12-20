@@ -1,5 +1,4 @@
-This is a 2 player game called Battle Tanks that I created as a school project.  It is written in python, utilizing Tkinter,
-the built in GUI.  I have also used the Pmw 1.3 library to create more complex widgets on the Tkinter module.
+This is a 2 player game called Battle Tanks that I created as a school project.  It is written in Python, and utilizes Tkinter,the built in GUI.  I have also used the Pmw 1.3 library to create more complex widgets on the Tkinter module.
 
 The objective of the game is to select a weapon and choose an appropriate angle/power combination that will hit the 
 opponent, in order to recieve points. Each weapon has different properties like explosion size, explosion kick, amount of
